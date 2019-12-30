@@ -6,15 +6,23 @@ from tqdm import tqdm
 import multiprocessing
 import argparse
 import os
+import PIL.Image
+
+def __is_jpeg(file_path):
+    return os.path.splitext(file_path)[1].lower() in [".jpg", ".jpeg"]
 
 def __calc_hash(file_path):
-    with open(file_path, "rb") as file_data:
-        md5_value = hashlib.md5(file_data.read(1024*1024*8))
-    return file_path, md5_value.hexdigest()
+    if __is_jpeg(file_path):
+        with PIL.Image.open(file_path) as jpeg_file:
+            data = jpeg_file.tobytes()
+    else:
+        with open(file_path, "rb") as file_data:
+            data = file_data.read(1024*1024*8)
+    return file_path, hashlib.md5(data).hexdigest()
 
 def __detect_duplicated_groups(path_list):
     process_pool = multiprocessing.Pool(multiprocessing.cpu_count())
-    result = process_pool.map(__calc_hash, tqdm(path_list), 10)
+    result = process_pool.map(__calc_hash, tqdm(path_list), 100)
     group_map = {}
     for file_path, hash_string in result:
         if hash_string not in group_map:
@@ -28,7 +36,24 @@ def __detect_duplicated_groups(path_list):
     ]
     return duplicated_groups
 
+def __read_picture(picture_file_path):
+    with PIL.Image.open(picture_file_path) as pic:
+        pic_bytes =  pic.tobytes()
+    return pic_bytes
+
+def __compare_bytes(lhbytes, rhbytes):
+    if len(lhbytes) != len(rhbytes):
+        return False
+    for lhv, rhv in zip(lhbytes, rhbytes):
+        if lhv - rhv != 0:
+            return False
+    return True
+
 def __compare_file(file_pair):
+    if __is_jpeg(file_pair[0]):
+        lhv = __read_picture(file_pair[0])
+        rhv = __read_picture(file_pair[1])
+        return __compare_bytes(lhv, rhv)
     return filecmp.cmp(file_pair[0], file_pair[1], False)
 
 def __deep_compare_file_pairs(file_pairs):
